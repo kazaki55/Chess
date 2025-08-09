@@ -3,14 +3,15 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Math Rush</title>
+<title>Math Rush — Installable</title>
+<meta name="theme-color" content="#0b1220"/>
 <style>
   :root{
-    --bg1: #0f172a; --bg2:#071034; --card:#0b1220;
-    --accent:#ffd166; --good:#22c55e; --bad:#ff6b6b; --muted:#9fb8df;
+    --bg1:#071034; --bg2:#0f172a;
+    --card:#0b1220; --accent:#ffd166; --good:#22c55e; --bad:#ff6b6b; --muted:#9fb8df;
   }
   html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:
-    radial-gradient(1200px 600px at 10% 10%, rgba(120,87,224,0.12), transparent),
+    radial-gradient(1200px 600px at 10% 10%, rgba(120,87,224,0.08), transparent),
     linear-gradient(180deg,var(--bg1),var(--bg2));color:#e6eef8}
   .wrap{max-width:980px;margin:12px auto;padding:12px;display:flex;flex-direction:column;gap:12px}
   header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -18,9 +19,8 @@
   .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .btn{background:linear-gradient(180deg,#183b71,#07214a);border:0;padding:8px 12px;border-radius:10px;color:#fff;font-weight:700;cursor:pointer}
   .chip{background:rgba(255,255,255,0.04);padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03)}
-  .topbar{display:flex;gap:8px;align-items:center}
-  main{display:flex;gap:12px;flex-wrap:wrap}
   .panel{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+  main{display:flex;gap:12px;flex-wrap:wrap}
   .left{flex:1;min-width:260px;display:flex;flex-direction:column;gap:12px}
   .right{width:320px;min-width:220px}
   #arena{height:420px;background:linear-gradient(180deg,#061428,#08203b);border-radius:10px;position:relative;overflow:hidden;border:1px solid rgba(255,255,255,0.04)}
@@ -29,12 +29,10 @@
   .big{font-size:24px;font-weight:800}
   #inputRow{display:flex;gap:8px;margin-top:8px}
   #answerInput{flex:1;padding:10px;border-radius:10px;border:0;font-size:18px}
-  .danger{background:linear-gradient(90deg,#ff6b6b,#ff8f66);color:#fff}
-  .good{background:linear-gradient(90deg,#22c55e,#74f59a);color:#012a14}
   .difficulty{display:flex;gap:6px}
   .difficulty .btn{padding:6px 8px;font-weight:700;background:transparent;border:1px solid rgba(255,255,255,0.06)}
   #footer{font-size:12px;color:var(--muted);text-align:center;margin-top:6px}
-  /* mobile layout adjustments */
+  #installBtn{background:#ffd166;color:#07202a}
   @media (max-width:720px){
     .right{width:100%;min-width:unset}
     #arena{height:360px}
@@ -49,10 +47,12 @@
         <h1>Math Rush</h1>
         <div style="font-size:12px;color:var(--muted)">Solve falling problems before they hit the bottom</div>
       </div>
-      <div class="topbar">
+
+      <div class="controls">
         <div class="chip">Score: <span id="score">0</span></div>
         <div class="chip">Lives: <span id="lives">3</span></div>
         <div class="chip">Level: <span id="level">1</span></div>
+        <button id="installBtn" class="btn" style="display:none">Install</button>
         <button id="pauseBtn" class="btn">Pause</button>
         <button id="restartBtn" class="btn">Restart</button>
       </div>
@@ -105,19 +105,23 @@
       </div>
     </main>
 
-    <div id="footer">Made with ❤️ — Math Rush · Local game for web & mobile</div>
+    <div id="footer">Made with ❤️ — Math Rush · Installable PWA</div>
   </div>
 
 <script>
 (() => {
-  // CONFIG
+  // EASY MODE MADE EASIER:
+  // easy => 1-digit numbers, + and - only (rare 0-9)
+  // normal => 1-2 digit and * optionally
+  // hard => larger numbers and all operations
+
   const config = {
-    spawnInterval: 1200,   // base ms between spawns (scaled by difficulty)
-    baseSpeed: 40,         // px per second at level 1
-    speedGainPerLevel: 12, // px/sec added each level
+    spawnIntervalBase: 1400,
+    baseSpeed: 36,
+    speedGainPerLevel: 10,
     maxActive: 6,
     lives: 3,
-    levelUpEvery: 10, // points needed to increase level
+    levelUpEvery: 8,
     ops: { easy:['+','-'], normal:['+','-','*'], hard:['+','-','*','/'] }
   };
 
@@ -125,7 +129,7 @@
   let score = 0, lives = config.lives, level = 1, time = 0;
   let activeProblems = [], spawnTimer = 0, lastTime = null, paused = false;
   let difficulty = 'easy';
-  let spawnInterval = config.spawnInterval;
+  let spawnInterval = config.spawnIntervalBase;
   let arenaEl = document.getElementById('arena');
   const inputEl = document.getElementById('answerInput');
   const submitBtn = document.getElementById('submitBtn');
@@ -137,13 +141,12 @@
   const diffLabel = document.getElementById('diffLabel');
   const bestEl = document.getElementById('best');
   const pauseBtn = document.getElementById('pauseBtn');
+  const installBtn = document.getElementById('installBtn');
 
   // SOUND (WebAudio)
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   let audioCtx;
-  function ensureAudio(){
-    if(!audioCtx) audioCtx = new AudioCtx();
-  }
+  function ensureAudio(){ if(!audioCtx) audioCtx = new AudioCtx(); }
   function playBeep(freq, len=0.08, type='sine', vol=0.12){
     try{
       ensureAudio();
@@ -160,61 +163,132 @@
   function playCorrect(){ playBeep(880,0.12,'sine',0.14); }
   function playWrong(){ playBeep(220,0.22,'triangle',0.18); }
   function playMiss(){ playBeep(160,0.28,'sawtooth',0.22); }
-  function playLevelUp(){ playBeep(1200,0.12,'triangle',0.2); setTimeout(()=>playBeep(1500,0.12,'triangle',0.2),130); }
+  function playLevelUp(){ playBeep(1200,0.12,'triangle',0.25); setTimeout(()=>playBeep(1500,0.12,'triangle',0.25),140); }
 
   // STORAGE
   const BEST_KEY = 'mathrush_best_' + location.pathname;
   bestEl.textContent = localStorage.getItem(BEST_KEY) || '0';
 
-  // UI hook-ups
+  // UI events
   document.querySelectorAll('[data-diff]').forEach(b=>{
     b.addEventListener('click', ()=>{ difficulty = b.dataset.diff; diffLabel.textContent = difficulty; resetGame(); });
   });
   submitBtn.addEventListener('click', submitAnswer);
   inputEl.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') submitAnswer(); });
   document.getElementById('restartBtn').addEventListener('click', resetGame);
-  pauseBtn.addEventListener('click', ()=>{ paused = !paused; pauseBtn.textContent = paused ? 'Resume' : 'Pause'; if(!paused){ lastTime = performance.now(); tick(lastTime); } });
+  pauseBtn.addEventListener('click', ()=>{ paused = !paused; pauseBtn.textContent = paused ? 'Resume' : 'Pause'; if(!paused){ lastTime = performance.now(); requestAnimationFrame(tick);} });
 
-  // helper: random integer [min,max]
+  // INSTALL / PWA: create manifest and service worker dynamically
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    installBtn.style.display = 'inline-block';
+  });
+
+  installBtn.addEventListener('click', async () => {
+    if(deferredPrompt){
+      deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      installBtn.style.display = 'none';
+    } else {
+      alert('Install prompt not available on this browser.');
+    }
+  });
+
+  // Create and register manifest dynamically
+  const manifest = {
+    name: 'Math Rush',
+    short_name: 'MathRush',
+    start_url: './',
+    display: 'standalone',
+    background_color: '#071034',
+    theme_color: '#0b1220',
+    icons: [
+      { src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192"><rect width="100%" height="100%" fill="%23071234"/><text x="50%" y="55%" font-size="96" fill="%23ffd166" text-anchor="middle" font-family="Arial" font-weight="700">M</text></svg>', sizes: '192x192', type:'image/svg+xml' },
+      { src: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512"><rect width="100%" height="100%" fill="%23071234"/><text x="50%" y="55%" font-size="256" fill="%23ffd166" text-anchor="middle" font-family="Arial" font-weight="700">M</text></svg>', sizes: '512x512', type:'image/svg+xml' }
+    ]
+  };
+  const manifestBlob = new Blob([JSON.stringify(manifest)], {type:'application/json'});
+  const manifestURL = URL.createObjectURL(manifestBlob);
+  const link = document.createElement('link');
+  link.rel = 'manifest'; link.href = manifestURL;
+  document.head.appendChild(link);
+
+  // Dynamic Service Worker (so single-file deploy)
+  // The SW will cache the page and respond from cache when offline.
+  if('serviceWorker' in navigator){
+    const swCode = `
+      const CACHE = 'mathrush-cache-v1';
+      const toCache = ['./'];
+      self.addEventListener('install', e => {
+        self.skipWaiting();
+        e.waitUntil(
+          caches.open(CACHE).then(cache => cache.addAll(toCache).catch(()=>{}))
+        );
+      });
+      self.addEventListener('activate', e=>{ e.waitUntil(self.clients.claim()); });
+      self.addEventListener('fetch', e=>{
+        // Try cache first, then network
+        e.respondWith(
+          caches.match(e.request).then(r => r || fetch(e.request).then(resp => {
+            // cache GET requests (same-origin)
+            if(e.request.method === 'GET' && resp && resp.type !== 'opaque'){
+              caches.open(CACHE).then(cache => cache.put(e.request, resp.clone()).catch(()=>{}));
+            }
+            return resp;
+          }).catch(()=> caches.match('./')))
+        );
+      });
+    `;
+    const swBlob = new Blob([swCode], {type:'application/javascript'});
+    const swURL = URL.createObjectURL(swBlob);
+    navigator.serviceWorker.register(swURL).catch(()=>{ /* ignore errors */ });
+  }
+
+  // helper random int
   function ri(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 
-  // create a problem object and DOM element
+  // create problem
   function makeProblem(){
     const ops = config.ops[difficulty];
     const op = ops[ri(0, ops.length-1)];
     let a,b,ans,display;
-    if(op === '+'){ a=ri(1,20); b=ri(1,20); ans = a+b; display = `${a} + ${b}`; }
-    else if(op === '-'){ a=ri(0,30); b=ri(0,a); ans = a-b; display = `${a} - ${b}`; }
-    else if(op === '*'){ a=ri(2,12); b=ri(2,10); ans = a*b; display = `${a} × ${b}`; }
-    else if(op === '/'){ b = ri(2,10); ans = ri(2,12); a = b*ans; display = `${a} ÷ ${b}`; }
-    // difficulty variations: sometimes include negative or bigger numbers on higher diffs
-    if(difficulty === 'hard' && Math.random() < 0.15){
-      // swap to larger values occasionally
-      a *= ri(1,3); ans = eval(display.replace('×','*').replace('÷','/')); display = display;
+
+    if(difficulty === 'easy'){
+      // one-digit numbers 0-9, plus or minus. avoid negative results too often
+      if(op === '+'){ a=ri(0,9); b=ri(0,9); ans = a+b; display = `${a} + ${b}`; }
+      else { a=ri(0,9); b=ri(0,a); ans = a-b; display = `${a} - ${b}`; }
+    } else if(difficulty === 'normal'){
+      if(op === '+'){ a=ri(1,30); b=ri(1,30); ans=a+b; display=`${a} + ${b}`; }
+      else if(op === '-'){ a=ri(0,40); b=ri(0,a); ans=a-b; display=`${a} - ${b}`; }
+      else { // multiply
+        a=ri(2,12); b=ri(2,10); ans=a*b; display=`${a} × ${b}`; }
+    } else {
+      // hard
+      if(op === '+'){ a=ri(10,99); b=ri(10,99); ans=a+b; display=`${a} + ${b}`; }
+      else if(op === '-'){ a=ri(10,99); b=ri(0,Math.min(99,a)); ans=a-b; display=`${a} - ${b}`; }
+      else if(op === '*'){ a=ri(5,20); b=ri(2,15); ans=a*b; display=`${a} × ${b}`; }
+      else { b=ri(2,12); ans=ri(2,12); a = b*ans; display = `${a} ÷ ${b}`; }
     }
 
-    // DOM
     const el = document.createElement('div');
     el.className = 'problem';
     el.textContent = display;
     arenaEl.appendChild(el);
 
-    // position: random x inside arena with margin
+    // position (random X inside arena)
     const arenaRect = arenaEl.getBoundingClientRect();
-    const margin = 32;
-    const x = ri(margin, Math.max(margin, Math.floor(arenaRect.width - margin)));
-    el.style.left = x + 'px';
-    el.style.top = '-60px';
+    const left = Math.max(24, ri(24, Math.max(24, Math.floor(arenaRect.width - 24))));
+    el.style.left = left + 'px';
+    el.style.top = '-64px';
 
-    return { el, display, ans, x, y:-60, speed: getSpeed(), id: Date.now() + Math.random() };
+    return { el, display, ans, x:left, y:-64, speed: getSpeed(), id: Date.now() + Math.random() };
   }
 
-  function getSpeed(){
-    // px per second
-    return config.baseSpeed + (level-1) * config.speedGainPerLevel;
-  }
+  function getSpeed(){ return config.baseSpeed + (level-1) * config.speedGainPerLevel; }
 
-  // spawn logic
   function spawnProblem(){
     if(activeProblems.length >= config.maxActive) return;
     const p = makeProblem();
@@ -222,7 +296,6 @@
     updateHUD();
   }
 
-  // updates DOM HUD
   function updateHUD(){
     scoreEl.textContent = score;
     livesEl.textContent = lives;
@@ -231,99 +304,82 @@
     timeEl.textContent = (time/1000).toFixed(1);
   }
 
-  // Game tick
   function tick(now){
     if(paused) return;
     if(!lastTime) lastTime = now;
-    const dt = Math.min(100, now - lastTime); // ms
+    const dt = Math.min(100, now - lastTime);
     lastTime = now;
     time += dt;
-    // spawn timer
     spawnTimer += dt;
-    // spawn interval scales with difficulty and level
-    const diffScale = difficulty === 'easy' ? 1.1 : difficulty === 'normal' ? 1.0 : 0.85;
-    const currentSpawnInterval = spawnInterval * diffScale * Math.max(0.55, 1 - (level-1)*0.04);
+
+    const diffScale = difficulty === 'easy' ? 1.2 : difficulty === 'normal' ? 1.0 : 0.8;
+    const currentSpawnInterval = spawnInterval * diffScale * Math.max(0.5, 1 - (level-1)*0.04);
+
     if(spawnTimer >= currentSpawnInterval){
       spawnTimer = 0;
       spawnProblem();
     }
 
-    // move problems
     for(let i = activeProblems.length-1; i>=0; i--){
       const p = activeProblems[i];
       const dy = p.speed * (dt/1000);
       p.y += dy;
       p.el.style.top = p.y + 'px';
-      // if bottom reached
-      if(p.y > arenaEl.clientHeight - 20){
+
+      if(p.y > arenaEl.clientHeight - 30){
         // missed
-        arenaEl.removeChild(p.el);
+        try{ arenaEl.removeChild(p.el); }catch(e){}
         activeProblems.splice(i,1);
         lives--;
         playMiss();
         if(lives <= 0){ gameOver(); return; }
       }
     }
-
     updateHUD();
     requestAnimationFrame(tick);
   }
 
-  // submit answer: match any active problem with same answer (closest one prioritized)
   function submitAnswer(){
     if(paused) return;
     const raw = inputEl.value.trim();
     if(raw === '') return;
-    // accept integer answers only for now
     const val = Number(raw);
     if(Number.isNaN(val)){ inputEl.value=''; return; }
-    // find matching problems
-    // prefer the smallest vertical position (closest to bottom) if multiple
+
     let candidates = activeProblems.filter(p => Math.round(p.ans) === Math.round(val));
     if(candidates.length === 0){
-      // wrong
       score = Math.max(0, score - 1);
       playWrong();
       inputEl.value='';
       updateHUD();
       return;
     }
-    // choose candidate with largest y (closest to bottom)
     candidates.sort((a,b)=> b.y - a.y);
     const hit = candidates[0];
-    // remove it
     try{ arenaEl.removeChild(hit.el); }catch(e){}
     const idx = activeProblems.findIndex(x=>x.id === hit.id);
     if(idx >= 0) activeProblems.splice(idx,1);
 
-    // score and possibly level up
     score += 1;
     playCorrect();
-
     if(score > Number(localStorage.getItem(BEST_KEY) || 0)){
       localStorage.setItem(BEST_KEY, score);
       bestEl.textContent = score;
     }
-
-    // level up every levelUpEvery points
     if(score > 0 && score % config.levelUpEvery === 0){
       level++;
       playLevelUp();
-      // increase speed of existing problems
       activeProblems.forEach(p => p.speed = getSpeed());
     }
-
     inputEl.value='';
     updateHUD();
   }
 
   function gameOver(){
     paused = true;
-    // clear problems visually
     activeProblems.forEach(p=>{ try{ arenaEl.removeChild(p.el);}catch(e){} });
     activeProblems = [];
     updateHUD();
-    // show message
     const msg = document.createElement('div');
     msg.className = 'problem';
     msg.style.left = '50%'; msg.style.transform = 'translateX(-50%)';
@@ -334,49 +390,43 @@
     msg.textContent = `Game Over — Score: ${score}`;
     arenaEl.appendChild(msg);
     playWrong();
-    // offer restart after a short delay
-    setTimeout(()=>{ msg.textContent += ' · Press Restart'; },800);
   }
 
-  // reset / restart
   function resetGame(){
-    // clear arena
     activeProblems.forEach(p=>{ try{ arenaEl.removeChild(p.el);}catch(e){} });
     activeProblems = [];
     score = 0; lives = config.lives; level = 1; time = 0;
     spawnTimer = 0; lastTime = null; paused = false;
     diffLabel.textContent = difficulty;
-    // set spawnInterval base per difficulty
-    spawnInterval = { easy:1400, normal:1200, hard:900 }[difficulty] || config.spawnInterval;
-    // start ticking
+    spawnInterval = { easy:1700, normal:1200, hard:900 }[difficulty] || config.spawnIntervalBase;
     updateHUD();
-    // remove any leftover "Game Over" messages
     Array.from(arenaEl.querySelectorAll('.problem')).forEach(el=>{
-      // if it looks like a big msg (no arithmetic operators), remove
       if(!/[+\-×÷*\/]/.test(el.textContent)) try{ arenaEl.removeChild(el); }catch(e){}
     });
     if(!lastTime) lastTime = performance.now();
     requestAnimationFrame(tick);
+    setTimeout(()=>inputEl.focus(),300);
   }
 
-  // click on problem to auto-fill answer and submit (nice for touch)
   arenaEl.addEventListener('click', (ev)=>{
     if(paused) return;
     const target = ev.target.closest('.problem');
     if(!target) return;
-    // find matching active problem by element
     const p = activeProblems.find(pp => pp.el === target);
     if(!p) return;
     inputEl.value = Math.round(p.ans);
     submitAnswer();
   });
 
-  // init
+  // keyboard shortcuts
+  window.addEventListener('keydown', (e)=>{
+    if(e.key === ' '){ paused = !paused; pauseBtn.textContent = paused ? 'Resume' : 'Pause'; if(!paused){ lastTime = performance.now(); requestAnimationFrame(tick);} e.preventDefault(); }
+  });
+
+  // init UI
   diffLabel.textContent = difficulty;
   bestEl.textContent = localStorage.getItem(BEST_KEY) || '0';
   resetGame();
-  // focus input on load for desktop
-  setTimeout(()=>{ inputEl.focus(); },400);
 
 })();
 </script>
